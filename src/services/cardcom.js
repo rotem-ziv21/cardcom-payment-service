@@ -8,21 +8,30 @@ class CardcomService {
 
   async createLowProfile(locationId, paymentData) {
     try {
+      // Calculate total amount from items
+      const totalAmount = paymentData.items.reduce((sum, item) => {
+        return sum + (item.price * (item.quantity || 1));
+      }, 0);
+
       const requestData = {
         TerminalNumber: config.terminalNumber,
         APIName: config.apiName,
         ReturnValue: paymentData.orderId,
         Operation: "1",
         CodePage: "65001",
-        SumToBill: paymentData.amount,
-        ProductName: paymentData.items[0].name,
+        SumToBill: totalAmount,
+        Description: paymentData.items[0].name,
         SuccessRedirectUrl: `${process.env.BASE_URL}/payment/success/${locationId}`,
         FailedRedirectUrl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
         NotificationUrl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
         Language: paymentData.language || "he",
         CoinID: 1,
         IsManualCodeRequired: false,
-        IsValidatePhone: false
+        IsValidatePhone: false,
+        // Add customer details
+        CustomerEmail: paymentData.customerEmail,
+        CustomerId: locationId,
+        CustomerName: paymentData.customerName
       };
 
       console.log('Sending request to Cardcom:', JSON.stringify(requestData, null, 2));
