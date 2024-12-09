@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment Page</title>
+    <script>
+        // Listen for messages from HighLevel
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'payment_initiate_props') {
+                // Notify HighLevel that we're ready
+                window.parent.postMessage({
+                    type: 'custom_provider_ready',
+                    loaded: true
+                }, '*');
+                
+                // Handle payment data
+                handlePayment(event.data);
+            }
+        });
+
+        function handlePayment(paymentData) {
+            // TODO: Implement payment processing logic
+            
+            // Example success response
+            window.parent.postMessage({
+                type: 'custom_element_success_response',
+                chargeId: 'demo_charge_id'
+            }, '*');
+        }
+
+        function handleError(error) {
+            window.parent.postMessage({
+                type: 'custom_element_error_response',
+                error: {
+                    description: error.message
+                }
+            }, '*');
+        }
+
+        function handleCancel() {
+            window.parent.postMessage({
+                type: 'custom_element_close_response'
+            }, '*');
+        }
+    </script>
+</head>
+<body>
+    <div id="payment-form">
+        <!-- Add your payment form here -->
+    </div>
+</body>
+</html>
