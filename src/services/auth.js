@@ -8,8 +8,8 @@ class AuthService {
   generateAuthUrl() {
     const params = {
       response_type: 'code',
-      redirect_uri: process.env.HIGHLEVEL_REDIRECT_URI,
-      client_id: process.env.HIGHLEVEL_CLIENT_ID,
+      redirect_uri: process.env.REDIRECT_URI,
+      client_id: process.env.CLIENT_ID,
       scope: [
         'payments/orders.readonly',
         'payments/orders.write',
@@ -20,7 +20,7 @@ class AuthService {
         'products.readonly',
         'products/prices.readonly'
       ].join(' '),
-      loginWindowOpenMode: 'self' // Login in same tab
+      loginWindowOpenMode: 'self'
     };
 
     return `${this.authBaseUrl}?${querystring.stringify(params)}`;

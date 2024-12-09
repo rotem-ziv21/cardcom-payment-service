@@ -1,7 +1,7 @@
 {
-  "name": "highlevel-payment-provider",
+  "name": "payment-provider",
   "version": "1.0.0",
-  "description": "Custom payment provider integration for HighLevel with Cardcom",
+  "description": "Custom payment provider integration with Cardcom",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
