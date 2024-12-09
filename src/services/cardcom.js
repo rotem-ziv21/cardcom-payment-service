@@ -41,18 +41,19 @@ class CardcomService {
 
       console.log('Cardcom response:', JSON.stringify(response.data, null, 2));
 
-      if (response.data.ResponseCode !== "0") {
-        throw new Error(`Cardcom error: ${response.data.Description}`);
+      // Check if we got a valid URL back
+      if (!response.data.url) {
+        throw new Error(`Cardcom error: ${response.data.Description || 'Unknown error'}`);
       }
 
       return {
         success: true,
         transactionId: paymentData.orderId,
-        paymentUrl: response.data.LowProfileUrl
+        paymentUrl: response.data.url
       };
     } catch (error) {
       console.error('Error creating Low Profile:', error.response ? error.response.data : error.message);
-      throw error;
+      throw new Error(error.response?.data?.Description || error.message);
     }
   }
 
