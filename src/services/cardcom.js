@@ -13,16 +13,19 @@ class CardcomService {
         TerminalNumber: config.terminalNumber,
         ApiName: config.apiName,
         ReturnValue: paymentData.orderId,
-        Amount: paymentData.amount,
+        Operation: "1", // Regular transaction
+        CodePage: "65001", // UTF-8
+        SumToBill: paymentData.amount,
         SuccessRedirectUrl: `${process.env.BASE_URL}/payment/success/${locationId}`,
         FailedRedirectUrl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
-        WebHookUrl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
+        NotificationUrl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
         Document: {
           To: paymentData.customerName,
           Email: paymentData.customerEmail,
           Products: paymentData.items.map(item => ({
-            Description: item.description,
-            UnitCost: item.amount
+            Description: item.name,
+            UnitCost: item.price,
+            Quantity: item.quantity || 1
           }))
         },
         Language: paymentData.language || "he",
@@ -31,7 +34,15 @@ class CardcomService {
         IsValidatePhone: false
       });
 
-      return response.data;
+      if (response.data.ResponseCode !== "0") {
+        throw new Error(`Cardcom error: ${response.data.Description}`);
+      }
+
+      return {
+        success: true,
+        transactionId: paymentData.orderId,
+        paymentUrl: response.data.LowProfileUrl
+      };
     } catch (error) {
       console.error('Error creating Low Profile:', error);
       throw error;
