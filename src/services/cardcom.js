@@ -8,31 +8,29 @@ class CardcomService {
 
   async createLowProfile(locationId, paymentData) {
     try {
-      // Create Low Profile request
-      const response = await axios.post(`${this.baseUrl}/LowProfile/Create`, {
+      const requestData = {
         TerminalNumber: config.terminalNumber,
-        ApiName: config.apiName,
+        APIName: config.apiName,
         ReturnValue: paymentData.orderId,
-        Operation: "1", // Regular transaction
-        CodePage: "65001", // UTF-8
+        Operation: "1",
+        CodePage: "65001",
         SumToBill: paymentData.amount,
+        ProductName: paymentData.items[0].name,
         SuccessRedirectUrl: `${process.env.BASE_URL}/payment/success/${locationId}`,
         FailedRedirectUrl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
         NotificationUrl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
-        Document: {
-          To: paymentData.customerName,
-          Email: paymentData.customerEmail,
-          Products: paymentData.items.map(item => ({
-            Description: item.name,
-            UnitCost: item.price,
-            Quantity: item.quantity || 1
-          }))
-        },
         Language: paymentData.language || "he",
-        CoinID: 1, // NIS
+        CoinID: 1,
         IsManualCodeRequired: false,
         IsValidatePhone: false
-      });
+      };
+
+      console.log('Sending request to Cardcom:', JSON.stringify(requestData, null, 2));
+
+      // Create Low Profile request
+      const response = await axios.post(`${this.baseUrl}/LowProfile/Create`, requestData);
+
+      console.log('Cardcom response:', JSON.stringify(response.data, null, 2));
 
       if (response.data.ResponseCode !== "0") {
         throw new Error(`Cardcom error: ${response.data.Description}`);
@@ -44,7 +42,7 @@ class CardcomService {
         paymentUrl: response.data.LowProfileUrl
       };
     } catch (error) {
-      console.error('Error creating Low Profile:', error);
+      console.error('Error creating Low Profile:', error.response ? error.response.data : error.message);
       throw error;
     }
   }
