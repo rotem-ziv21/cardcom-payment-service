@@ -1,73 +1,88 @@
 const axios = require('axios');
-const config = require('../config/cardcom');
 
 class CardcomService {
   constructor() {
-    this.baseUrl = 'https://secure.cardcom.solutions/Interface/LowProfileClearing.aspx';
+    this.baseUrl = process.env.CARDCOM_ENVIRONMENT === 'test' 
+      ? 'https://secure.cardcom.solutions/api/v11/LowProfile/Create'
+      : 'https://secure.cardcom.co.il/api/v11/LowProfile/Create';
+    
+    this.terminalNumber = process.env.CARDCOM_TERMINAL_NUMBER;
+    this.apiName = process.env.CARDCOM_API_NAME;
   }
 
-  async createLowProfile(locationId, paymentData) {
+  async createLowProfile(locationId, {
+    orderId,
+    amount,
+    customerName,
+    customerEmail,
+    items = [],
+    language = 'he'
+  }) {
     try {
-      // Calculate total amount from items
-      const totalAmount = paymentData.items.reduce((sum, item) => {
-        return sum + (item.price * (item.quantity || 1));
-      }, 0);
+      console.log('Creating low profile payment page with params:', {
+        locationId,
+        orderId,
+        amount,
+        customerName,
+        customerEmail,
+        items
+      });
+
+      // Calculate total amount from items if not provided directly
+      const totalAmount = amount || items.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
 
       const requestData = {
-        terminalnumber: config.terminalNumber,
-        lowprofilecode: config.apiName,
-        sum: totalAmount,
-        coinid: 1, // NIS
-        language: paymentData.language || "he",
-        customeremail: paymentData.customerEmail,
-        customerid: locationId,
-        customername: paymentData.customerName,
-        successurl: `${process.env.BASE_URL}/payment/success/${locationId}`,
-        failureurl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
-        cancelurl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
-        callbackurl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
-        description: paymentData.items[0].name,
-        operationtype: "1",
-        codepage: "65001",
-        returnvalue: paymentData.orderId
+        TerminalNumber: parseInt(this.terminalNumber),
+        ApiName: this.apiName,
+        ReturnValue: orderId,
+        Amount: parseFloat(totalAmount),
+        SuccessRedirectUrl: `${process.env.BASE_URL}/payment/success/${locationId}`,
+        FailedRedirectUrl: `${process.env.BASE_URL}/payment/failed/${locationId}`,
+        WebHookUrl: `${process.env.BASE_URL}/payment/webhook/${locationId}`,
+        Document: {
+          To: customerName,
+          Email: customerEmail,
+          Products: items.map(item => ({
+            Description: item.name,
+            UnitCost: parseFloat(item.price),
+            Quantity: item.quantity || 1
+          }))
+        }
       };
 
       console.log('Sending request to Cardcom:', JSON.stringify(requestData, null, 2));
 
-      // Create Low Profile request
-      const response = await axios.post(this.baseUrl, null, {
-        params: requestData
-      });
+      const response = await axios.post(this.baseUrl, requestData);
+      console.log('Received response from Cardcom:', response.data);
 
-      console.log('Cardcom response:', JSON.stringify(response.data, null, 2));
-
-      // Check if we got a valid URL back
-      if (!response.data || response.data.includes('Error')) {
-        throw new Error(`Cardcom error: ${response.data || 'Unknown error'}`);
+      if (response.data && response.data.Url) {
+        return {
+          success: true,
+          url: response.data.Url
+        };
+      } else {
+        throw new Error('Invalid response from Cardcom');
       }
 
-      return {
-        success: true,
-        transactionId: paymentData.orderId,
-        paymentUrl: response.data
-      };
     } catch (error) {
-      console.error('Error creating Low Profile:', error.response ? error.response.data : error.message);
-      throw new Error(error.response?.data || error.message);
+      console.error('Error creating low profile payment:', error.response?.data || error.message);
+      throw error;
     }
   }
 
   async handleWebhook(locationId, webhookData) {
     try {
-      const { ReturnValue, Status, ErrorMessage } = webhookData;
-      
+      console.log('Received webhook for locationId:', locationId);
+      console.log('Webhook data:', webhookData);
+
+      // Process the webhook data and return appropriate response
       return {
-        orderId: ReturnValue,
-        success: Status === '0',
-        message: Status === '0' ? 'Payment successful' : ErrorMessage
+        success: true,
+        message: 'Webhook processed successfully'
       };
+
     } catch (error) {
-      console.error('Error handling webhook:', error);
+      console.error('Error processing webhook:', error);
       throw error;
     }
   }
@@ -78,6 +93,62 @@ class CardcomService {
       orderId,
       status: 'pending',
       message: 'Status will be updated via webhook'
+    };
+  }
+
+  async verifyPayment(paymentId) {
+    try {
+      const response = await axios.post('https://secure.cardcom.solutions/api/v11/LowProfile/QueryPayment', {
+        TerminalNumber: parseInt(this.terminalNumber),
+        ApiName: this.apiName,
+        LowProfileId: paymentId
+      });
+
+      return {
+        status: response.data.Status,
+        transactionId: response.data.TransactionId,
+        amount: response.data.Amount,
+        currency: 'ILS',
+        metadata: {
+          cardcomStatus: response.data.Status,
+          cardcomTransactionId: response.data.TransactionId
+        }
+      };
+    } catch (error) {
+      console.error('Error verifying payment:', error);
+      throw error;
+    }
+  }
+
+  async refundPayment(paymentId, amount) {
+    try {
+      const response = await axios.post('https://secure.cardcom.solutions/api/v11/Transactions/ChargeRefund', {
+        TerminalNumber: parseInt(this.terminalNumber),
+        ApiName: this.apiName,
+        TransactionId: paymentId,
+        SumToBill: amount
+      });
+
+      return {
+        success: response.data.ResponseCode === 0,
+        refundId: response.data.RefundTransactionId,
+        amount: amount,
+        currency: 'ILS',
+        metadata: {
+          cardcomRefundId: response.data.RefundTransactionId
+        }
+      };
+    } catch (error) {
+      console.error('Error refunding payment:', error);
+      throw error;
+    }
+  }
+
+  async checkSubscription(paymentId) {
+    // קארדקום לא תומכת במנויים בממשק הנוכחי
+    return {
+      status: 'not_supported',
+      message: 'Subscriptions are not supported in the current implementation'
     };
   }
 }

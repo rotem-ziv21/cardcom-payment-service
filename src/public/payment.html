@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cardcom Payment</title>
+    <style>
+        .payment-iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        .payment-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="payment-container">
+        <div id="payment-frame"></div>
+    </div>
+
+    <script>
+        async function initiatePayment() {
+            try {
+                // נניח שזה הנתונים שאתה רוצה לשלוח
+                const paymentData = {
+                    amount: 10.5,
+                    customerName: 'Test Client',
+                    customerEmail: 'test@testdomain.com',
+                    items: [{
+                        name: 'Test Product',
+                        price: 10.5,
+                        quantity: 1
+                    }]
+                };
+
+                // שליחת בקשה לשרת שלנו
+                const response = await fetch('/api/payment/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(paymentData)
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.url) {
+                    // יצירת ה-iframe
+                    const iframe = document.createElement('iframe');
+                    iframe.className = 'payment-iframe';
+                    iframe.src = result.url;
+                    
+                    // הוספת ה-iframe לדף
+                    const container = document.getElementById('payment-frame');
+                    container.innerHTML = '';
+                    container.appendChild(iframe);
+                } else {
+                    console.error('Failed to get payment URL:', result);
+                    alert('Failed to initialize payment');
+                }
+            } catch (error) {
+                console.error('Payment error:', error);
+                alert('Payment initialization failed');
+            }
+        }
+
+        // הפעלת הפונקציה כשהדף נטען
+        window.onload = initiatePayment;
+    </script>
+</body>
+</html>

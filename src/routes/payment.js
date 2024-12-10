@@ -1,114 +1,284 @@
 const express = require('express');
 const router = express.Router();
-const highLevelService = require('../services/highlevel');
 const cardcomService = require('../services/cardcom');
+const path = require('path');
 
-// Handle payment initiation from HighLevel
-router.post('/process/:locationId', async (req, res) => {
-  try {
-    const { locationId } = req.params;
-    const { 
-      orderId,
-      amount,
-      customerName,
-      customerEmail,
-      items,
-      language = 'he'
-    } = req.body;
-
-    // Create Low Profile payment page in Cardcom
-    const lowProfileResponse = await cardcomService.createLowProfile(locationId, {
-      orderId,
-      amount,
-      customerName,
-      customerEmail,
-      items,
-      language
-    });
-
-    // Return the payment page URL to be loaded in iframe
+// GoHighLevel Payment Provider Metadata
+router.get('/provider', (req, res) => {
     res.json({
-      success: true,
-      paymentUrl: lowProfileResponse.LowProfileUrl,
-      transactionId: orderId
+        name: process.env.PROVIDER_NAME,
+        description: process.env.PROVIDER_DESCRIPTION,
+        logoUrl: process.env.PROVIDER_LOGO_URL,
+        uniqueName: process.env.PROVIDER_UNIQUE_NAME,
+        paymentUrl: `${process.env.BASE_URL}/process/:locationId`,
+        queryUrl: `${process.env.BASE_URL}/query/:locationId`
     });
-
-  } catch (error) {
-    console.error('Payment process error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
 });
 
-// Handle Cardcom webhook notifications
-router.post('/webhook/:locationId', async (req, res) => {
-  try {
-    const { locationId } = req.params;
-    const webhookData = req.body;
+// Process payment request from GoHighLevel
+router.post('/process/:locationId', async (req, res) => {
+    try {
+        const { locationId } = req.params;
+        const {
+            amount,
+            currency,
+            items,
+            customer,
+            metadata
+        } = req.body;
 
-    const result = await cardcomService.handleWebhook(locationId, webhookData);
+        // יצירת פרטי התשלום לקארדקום
+        const paymentData = {
+            orderId: metadata?.orderId || `GHL-${Date.now()}`,
+            amount: parseFloat(amount),
+            customerName: `${customer.firstName} ${customer.lastName}`,
+            customerEmail: customer.email,
+            items: items.map(item => ({
+                name: item.name,
+                price: parseFloat(item.unitPrice),
+                quantity: item.quantity
+            }))
+        };
 
-    // Notify HighLevel about the payment status
-    if (result.success) {
-      await highLevelService.sendWebhookEvent('payment.succeeded', {
-        transactionId: result.orderId,
-        status: 'succeeded',
-        paymentProvider: 'cardcom'
-      });
-    } else {
-      await highLevelService.sendWebhookEvent('payment.failed', {
-        transactionId: result.orderId,
-        status: 'failed',
-        error: result.message,
-        paymentProvider: 'cardcom'
-      });
+        // יצירת עסקה בקארדקום
+        const result = await cardcomService.createLowProfile(locationId, paymentData);
+
+        // החזרת התשובה ל-GoHighLevel
+        res.json({
+            success: true,
+            paymentUrl: result.url,
+            providerId: result.providerId || paymentData.orderId,
+            metadata: {
+                cardcomLowProfileId: result.lowProfileId
+            }
+        });
+
+    } catch (error) {
+        console.error('Payment processing error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
-
-    res.json({ success: true });
-
-  } catch (error) {
-    console.error('Webhook handling error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
 });
 
-// Handle payment status check
-router.get('/status/:orderId', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const status = await cardcomService.getPaymentStatus(orderId);
-    res.json({ success: true, status });
-  } catch (error) {
-    console.error('Status check error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// Query endpoint for payment status, refunds, etc.
+router.post('/query/:locationId', async (req, res) => {
+    try {
+        const { locationId } = req.params;
+        const { action, paymentId, metadata } = req.body;
+
+        let result;
+        switch (action) {
+            case 'verify':
+                // בדיקת סטטוס תשלום
+                result = await cardcomService.verifyPayment(paymentId);
+                break;
+            
+            case 'refund':
+                // ביצוע זיכוי
+                const { amount } = req.body;
+                result = await cardcomService.refundPayment(paymentId, amount);
+                break;
+            
+            case 'subscription':
+                // בדיקת סטטוס מנוי
+                result = await cardcomService.checkSubscription(paymentId);
+                break;
+            
+            default:
+                throw new Error(`Unsupported action: ${action}`);
+        }
+
+        res.json({
+            success: true,
+            ...result
+        });
+
+    } catch (error) {
+        console.error('Query processing error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
 });
 
-// Success redirect endpoint
-router.get('/success/:locationId', async (req, res) => {
+// Webhook endpoint for payment status updates
+router.post('/webhook/:locationId', async (req, res) => {
+    try {
+        const { locationId } = req.params;
+        const webhookData = req.body;
+
+        // עדכון סטטוס התשלום ב-GoHighLevel
+        const status = webhookData.Status === 'Approved' ? 'success' : 'failed';
+        
+        // שליחת עדכון ל-GoHighLevel
+        // TODO: implement GoHighLevel status update
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Webhook processing error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Success/Failure redirect endpoints
+router.get('/payment/success/:locationId', (req, res) => {
+    const { locationId } = req.params;
+    const { ReturnValue } = req.query;
+    
+    // Redirect back to GoHighLevel with success status
+    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=success&orderId=${ReturnValue}`);
+});
+
+router.get('/payment/failed/:locationId', (req, res) => {
+    const { locationId } = req.params;
+    const { ReturnValue } = req.query;
+    
+    // Redirect back to GoHighLevel with failure status
+    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=failed&orderId=${ReturnValue}`);
+});
+
+// תצוגת דף התשלום
+router.get('/pay', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/payment.html'));
+});
+
+// Success page
+router.get('/success/:locationId', (req, res) => {
   res.send(`
-    <html>
-      <body>
-        <script>
-          window.parent.postMessage({ type: 'payment_success' }, '*');
-        </script>
-        <h2>התשלום בוצע בהצלחה!</h2>
-      </body>
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>תשלום הושלם בהצלחה</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+          margin: 0;
+          background-color: #f8f9fa;
+        }
+        .container {
+          text-align: center;
+          padding: 2rem;
+          background-color: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success-icon {
+          color: #28a745;
+          font-size: 48px;
+          margin-bottom: 1rem;
+        }
+        h1 {
+          color: #28a745;
+          margin-bottom: 1rem;
+        }
+        p {
+          color: #6c757d;
+          margin-bottom: 2rem;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="success-icon">✓</div>
+        <h1>התשלום בוצע בהצלחה!</h1>
+        <p>תודה על הרכישה</p>
+      </div>
+      <script>
+        // Notify parent window about success
+        if (window.opener) {
+          window.opener.postMessage({ type: 'payment_success' }, '*');
+          setTimeout(() => window.close(), 3000);
+        }
+      </script>
+    </body>
     </html>
   `);
 });
 
-// Failure redirect endpoint
-router.get('/failed/:locationId', async (req, res) => {
+// Failure page
+router.get('/failed/:locationId', (req, res) => {
   res.send(`
-    <html>
-      <body>
-        <script>
-          window.parent.postMessage({ type: 'payment_failed' }, '*');
-        </script>
-        <h2>התשלום נכשל, אנא נסה שנית</h2>
-      </body>
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>שגיאה בתשלום</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+          margin: 0;
+          background-color: #f8f9fa;
+        }
+        .container {
+          text-align: center;
+          padding: 2rem;
+          background-color: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .error-icon {
+          color: #dc3545;
+          font-size: 48px;
+          margin-bottom: 1rem;
+        }
+        h1 {
+          color: #dc3545;
+          margin-bottom: 1rem;
+        }
+        p {
+          color: #6c757d;
+          margin-bottom: 2rem;
+        }
+        .retry-button {
+          background-color: #007bff;
+          color: white;
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 1rem;
+        }
+        .retry-button:hover {
+          background-color: #0056b3;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="error-icon">✕</div>
+        <h1>התשלום נכשל</h1>
+        <p>אירעה שגיאה בביצוע התשלום. אנא נסה שנית.</p>
+        <button class="retry-button" onclick="window.close()">סגור</button>
+      </div>
+      <script>
+        // Notify parent window about failure
+        if (window.opener) {
+          window.opener.postMessage({ type: 'payment_failed' }, '*');
+          setTimeout(() => window.close(), 5000);
+        }
+      </script>
+    </body>
     </html>
   `);
+});
+
+// GoHighLevel test page
+router.get('/ghl-test', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/ghl-test.html'));
 });
 
 module.exports = router;
