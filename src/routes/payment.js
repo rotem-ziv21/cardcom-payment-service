@@ -16,6 +16,10 @@ router.get('/provider', (req, res) => {
 });
 
 // Process payment request from GoHighLevel
+router.get('/process/:locationId', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'payment.html'));
+});
+
 router.post('/process/:locationId', async (req, res) => {
     try {
         const { locationId } = req.params;

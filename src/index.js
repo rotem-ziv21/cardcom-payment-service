@@ -14,6 +14,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Add CSP headers
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self' https://secure.cardcom.solutions https://www.paypal.com; " +
+    "img-src 'self' data: https:; " +
+    "script-src 'self' 'unsafe-inline' https://secure.cardcom.solutions https://www.paypal.com; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "frame-src 'self' https://secure.cardcom.solutions https://www.paypal.com;"
+  );
+  next();
+});
+
 // Simple test route
 app.get('/', (req, res) => {
   res.json({
