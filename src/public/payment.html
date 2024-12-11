@@ -24,27 +24,86 @@
     </div>
 
     <script>
-        async function initiatePayment() {
+        let paymentData = null;
+
+        // שליחת אירוע מוכנות ל-GHL
+        function sendReadyEvent() {
+            window.parent.postMessage({
+                type: 'custom_provider_ready',
+                loaded: true
+            }, '*');
+        }
+
+        // טיפול באירועים מ-GHL
+        window.addEventListener('message', async function(event) {
+            const data = event.data;
+            
+            if (data.type === 'payment_initiate_props') {
+                console.log('Received payment data:', data);
+                paymentData = data;
+                await initiatePayment(data);
+            }
+        });
+
+        // טיפול בהודעות מקארדקום
+        window.addEventListener('message', function(event) {
+            if (event.origin === 'https://secure.cardcom.solutions') {
+                const data = event.data;
+                console.log('Received message from Cardcom:', data);
+
+                if (data.success) {
+                    // שליחת אירוע הצלחה ל-GHL
+                    window.parent.postMessage({
+                        type: 'custom_element_success_response',
+                        chargeId: data.chargeId || paymentData.transactionId
+                    }, '*');
+                } else if (data.error) {
+                    // שליחת אירוע שגיאה ל-GHL
+                    window.parent.postMessage({
+                        type: 'custom_element_error_response',
+                        error: {
+                            description: data.error
+                        }
+                    }, '*');
+                } else if (data.canceled) {
+                    // שליחת אירוע ביטול ל-GHL
+                    window.parent.postMessage({
+                        type: 'custom_element_close_response'
+                    }, '*');
+                }
+            }
+        });
+
+        async function initiatePayment(data) {
             try {
-                // נניח שזה הנתונים שאתה רוצה לשלוח
-                const paymentData = {
-                    amount: 10.5,
-                    customerName: 'Test Client',
-                    customerEmail: 'test@testdomain.com',
-                    items: [{
-                        name: 'Test Product',
-                        price: 10.5,
-                        quantity: 1
-                    }]
+                console.log('Initiating payment with data:', data);
+                
+                // הכנת נתוני התשלום לקארדקום
+                const cardcomData = {
+                    amount: data.amount,
+                    currency: data.currency,
+                    orderId: data.orderId,
+                    customer: {
+                        firstName: data.contact?.name?.split(' ')[0] || '',
+                        lastName: data.contact?.name?.split(' ').slice(1).join(' ') || '',
+                        email: data.contact?.email,
+                        phone: data.contact?.contact
+                    },
+                    metadata: {
+                        ghlTransactionId: data.transactionId,
+                        ghlOrderId: data.orderId,
+                        ghlSubscriptionId: data.subscriptionId,
+                        ghlLocationId: data.locationId
+                    }
                 };
 
                 // שליחת בקשה לשרת שלנו
-                const response = await fetch('/api/payment/create', {
+                const response = await fetch('/payment/process/' + data.locationId, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(paymentData)
+                    body: JSON.stringify(cardcomData)
                 });
 
                 const result = await response.json();
@@ -61,16 +120,28 @@
                     container.appendChild(iframe);
                 } else {
                     console.error('Failed to get payment URL:', result);
-                    alert('Failed to initialize payment');
+                    // שליחת שגיאה ל-GHL
+                    window.parent.postMessage({
+                        type: 'custom_element_error_response',
+                        error: {
+                            description: 'Failed to initialize payment'
+                        }
+                    }, '*');
                 }
             } catch (error) {
                 console.error('Payment error:', error);
-                alert('Payment initialization failed');
+                // שליחת שגיאה ל-GHL
+                window.parent.postMessage({
+                    type: 'custom_element_error_response',
+                    error: {
+                        description: error.message || 'Payment initialization failed'
+                    }
+                }, '*');
             }
         }
 
-        // הפעלת הפונקציה כשהדף נטען
-        window.onload = initiatePayment;
+        // שליחת אירוע מוכנות כשהדף נטען
+        window.onload = sendReadyEvent;
     </script>
 </body>
 </html>

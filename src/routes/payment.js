@@ -79,6 +79,34 @@ router.post('/process/:locationId', async (req, res) => {
     }
 });
 
+// Query payment status
+router.post('/query/:locationId', async (req, res) => {
+    try {
+        const { locationId } = req.params;
+        const { type, transactionId, apiKey, chargeId, subscriptionId } = req.body;
+
+        console.log('Query payment status:', {
+            locationId,
+            type,
+            transactionId,
+            chargeId,
+            subscriptionId
+        });
+
+        // כאן נצטרך לבדוק את סטטוס התשלום מול קארדקום
+        // לבינתיים נחזיר הצלחה
+        res.json({
+            success: true
+        });
+    } catch (error) {
+        console.error('Query payment error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Query endpoint for payment status, refunds, etc.
 router.post('/query/:locationId', async (req, res) => {
     try {
@@ -125,27 +153,6 @@ router.post('/query/:locationId', async (req, res) => {
             error: error.message || 'Internal server error'
         });
     }
-});
-
-// Success/Failure redirect endpoints
-router.get('/payment/success/:locationId', (req, res) => {
-    const { locationId } = req.params;
-    const { ReturnValue } = req.query;
-    
-    console.log('Payment success:', { locationId, ReturnValue });
-    
-    // Redirect back to GoHighLevel with success status
-    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=success&orderId=${ReturnValue}`);
-});
-
-router.get('/payment/failed/:locationId', (req, res) => {
-    const { locationId } = req.params;
-    const { ReturnValue } = req.query;
-    
-    console.log('Payment failed:', { locationId, ReturnValue });
-    
-    // Redirect back to GoHighLevel with failure status
-    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=failed&orderId=${ReturnValue}`);
 });
 
 // Webhook endpoint for payment status updates
