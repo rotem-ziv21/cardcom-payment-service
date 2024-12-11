@@ -36,6 +36,10 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+app.get('/ghl-test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'ghl-test.html'));
+});
+
 const paymentRoutes = require('./routes/payment');
 const statusRoutes = require('./routes/status');
 
