@@ -14,6 +14,10 @@ app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
+app.get('/ghl-test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'ghl-test.html'));
+});
+
 app.use('/payment', paymentRoutes);
 
 // Error handling middleware
