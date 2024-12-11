@@ -55,84 +55,69 @@
 <body>
     <div class="container">
         <h1>GoHighLevel Payment Test</h1>
-        <p>Testing payment flow for: חולצה - ₪5</p>
-        
-        <div id="status" style="display: none;" class="status"></div>
-        
-        <button onclick="startPayment()">Start Payment Flow</button>
+        <button onclick="startPayment()">Start Payment</button>
         <div id="payment-container"></div>
+        <div id="status"></div>
     </div>
 
     <script>
-        async function startPayment() {
-            try {
-                // 1. קודם כל נשלח בקשה ליצירת עסקה
-                const paymentData = {
-                    amount: 5,
-                    currency: 'ILS',
-                    items: [{
-                        name: 'חולצה',
-                        unitPrice: 5,
-                        quantity: 1
-                    }],
-                    customer: {
-                        firstName: 'Test',
-                        lastName: 'Client',
-                        email: 'test@testdomain.com'
-                    },
-                    metadata: {
-                        orderId: 'GHL-TEST-' + Date.now()
-                    }
-                };
+        // יצירת iframe ושליחת אירוע מוכנות
+        function createPaymentFrame() {
+            const iframe = document.createElement('iframe');
+            iframe.src = '/payment.html';
+            iframe.className = 'payment-frame';
+            document.getElementById('payment-container').appendChild(iframe);
 
-                // שליחת בקשה ליצירת תשלום (כמו שGoHighLevel יעשה)
-                console.log('Sending payment request...');
-                const response = await fetch('/payment/process/ZP9ZJZ6e7kXwdFYSQYDq', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(paymentData)
-                });
-
-                console.log('Got response:', response);
-                const result = await response.json();
-                console.log('Response data:', result);
-                
-                if (result.success && result.url) {
-                    // יצירת ה-iframe
-                    const container = document.getElementById('payment-container');
-                    container.innerHTML = `<iframe src="${result.url}" class="payment-frame"></iframe>`;
-                    
-                    // הצגת הודעת הצלחה
-                    showStatus('Payment page loaded successfully', 'success');
-                } else {
-                    showStatus('Failed to create payment: ' + (result.error || 'Unknown error'), 'error');
+            // האזנה להודעת מוכנות מה-iframe
+            window.addEventListener('message', function(event) {
+                if (event.data.type === 'custom_provider_ready') {
+                    console.log('Payment iframe is ready');
+                    // שליחת נתוני התשלום
+                    iframe.contentWindow.postMessage({
+                        type: 'payment_initiate_props',
+                        publishableKey: 'test_key',
+                        amount: 5,
+                        currency: 'ILS',
+                        mode: 'payment',
+                        contact: {
+                            id: 'test_customer_id',
+                            name: 'Test Client',
+                            email: 'test@testdomain.com',
+                            contact: '+972501234567'
+                        },
+                        orderId: 'GHL-TEST-' + Date.now(),
+                        transactionId: 'GHL-TRANS-' + Date.now(),
+                        locationId: 'ZP9ZJZ6e7kXwdFYSQYDq'
+                    }, '*');
                 }
-            } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
-                console.error('Payment error:', error);
-            }
+            });
+
+            // האזנה לתשובות מה-iframe
+            window.addEventListener('message', function(event) {
+                const data = event.data;
+                console.log('Received response:', data);
+
+                if (data.type === 'custom_element_success_response') {
+                    showStatus('Payment successful! Charge ID: ' + data.chargeId, 'success');
+                } else if (data.type === 'custom_element_error_response') {
+                    showStatus('Payment failed: ' + data.error.description, 'error');
+                } else if (data.type === 'custom_element_close_response') {
+                    showStatus('Payment canceled by user', 'error');
+                }
+            });
         }
 
         function showStatus(message, type) {
             const statusDiv = document.getElementById('status');
             statusDiv.textContent = message;
             statusDiv.className = 'status ' + type;
-            statusDiv.style.display = 'block';
         }
 
-        // האזנה להודעות מהiframe
-        window.addEventListener('message', function(event) {
-            // בדיקה שההודעה מגיעה מקארדקום
-            if (event.origin === 'https://secure.cardcom.solutions') {
-                if (event.data.status === 'success') {
-                    showStatus('Payment completed successfully!', 'success');
-                } else if (event.data.status === 'failed') {
-                    showStatus('Payment failed: ' + event.data.message, 'error');
-                }
-            }
-        });
+        function startPayment() {
+            document.getElementById('payment-container').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+            createPaymentFrame();
+        }
     </script>
 </body>
 </html>
