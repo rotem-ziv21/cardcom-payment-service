@@ -86,7 +86,8 @@
                 };
 
                 // שליחת בקשה ליצירת תשלום (כמו שGoHighLevel יעשה)
-                const response = await fetch('/payment/process/test-location', {
+                console.log('Sending payment request...');
+                const response = await fetch('https://cardcom-payment-service.onrender.com/payment/process/test-location', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -94,7 +95,9 @@
                     body: JSON.stringify(paymentData)
                 });
 
+                console.log('Got response:', response);
                 const result = await response.json();
+                console.log('Response data:', result);
                 
                 if (result.success && result.url) {
                     // יצירת ה-iframe
