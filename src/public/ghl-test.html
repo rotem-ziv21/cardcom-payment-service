@@ -108,6 +108,7 @@
                 }
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
+                console.error('Payment error:', error);
             }
         }
 

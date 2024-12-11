@@ -27,6 +27,15 @@ router.post('/process/:locationId', async (req, res) => {
             metadata
         } = req.body;
 
+        console.log('Received payment request:', {
+            locationId,
+            amount,
+            currency,
+            items,
+            customer,
+            metadata
+        });
+
         // יצירת פרטי התשלום לקארדקום
         const paymentData = {
             orderId: metadata?.orderId || `GHL-${Date.now()}`,
@@ -40,13 +49,17 @@ router.post('/process/:locationId', async (req, res) => {
             }))
         };
 
+        console.log('Creating payment with data:', paymentData);
+
         // יצירת עסקה בקארדקום
         const result = await cardcomService.createLowProfile(locationId, paymentData);
+
+        console.log('Cardcom response:', result);
 
         // החזרת התשובה ל-GoHighLevel
         res.json({
             success: true,
-            paymentUrl: result.url,
+            url: result.url,
             providerId: result.providerId || paymentData.orderId,
             metadata: {
                 cardcomLowProfileId: result.lowProfileId
@@ -57,7 +70,7 @@ router.post('/process/:locationId', async (req, res) => {
         console.error('Payment processing error:', error);
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message || 'Internal server error'
         });
     }
 });
@@ -68,27 +81,33 @@ router.post('/query/:locationId', async (req, res) => {
         const { locationId } = req.params;
         const { action, paymentId, metadata } = req.body;
 
+        console.log('Received query request:', {
+            locationId,
+            action,
+            paymentId,
+            metadata
+        });
+
         let result;
         switch (action) {
             case 'verify':
-                // בדיקת סטטוס תשלום
                 result = await cardcomService.verifyPayment(paymentId);
                 break;
             
             case 'refund':
-                // ביצוע זיכוי
                 const { amount } = req.body;
                 result = await cardcomService.refundPayment(paymentId, amount);
                 break;
             
             case 'subscription':
-                // בדיקת סטטוס מנוי
                 result = await cardcomService.checkSubscription(paymentId);
                 break;
             
             default:
                 throw new Error(`Unsupported action: ${action}`);
         }
+
+        console.log('Query result:', result);
 
         res.json({
             success: true,
@@ -99,9 +118,30 @@ router.post('/query/:locationId', async (req, res) => {
         console.error('Query processing error:', error);
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message || 'Internal server error'
         });
     }
+});
+
+// Success/Failure redirect endpoints
+router.get('/payment/success/:locationId', (req, res) => {
+    const { locationId } = req.params;
+    const { ReturnValue } = req.query;
+    
+    console.log('Payment success:', { locationId, ReturnValue });
+    
+    // Redirect back to GoHighLevel with success status
+    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=success&orderId=${ReturnValue}`);
+});
+
+router.get('/payment/failed/:locationId', (req, res) => {
+    const { locationId } = req.params;
+    const { ReturnValue } = req.query;
+    
+    console.log('Payment failed:', { locationId, ReturnValue });
+    
+    // Redirect back to GoHighLevel with failure status
+    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=failed&orderId=${ReturnValue}`);
 });
 
 // Webhook endpoint for payment status updates
@@ -109,6 +149,8 @@ router.post('/webhook/:locationId', async (req, res) => {
     try {
         const { locationId } = req.params;
         const webhookData = req.body;
+
+        console.log('Received webhook:', webhookData);
 
         // עדכון סטטוס התשלום ב-GoHighLevel
         const status = webhookData.Status === 'Approved' ? 'success' : 'failed';
@@ -121,23 +163,6 @@ router.post('/webhook/:locationId', async (req, res) => {
         console.error('Webhook processing error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-});
-
-// Success/Failure redirect endpoints
-router.get('/payment/success/:locationId', (req, res) => {
-    const { locationId } = req.params;
-    const { ReturnValue } = req.query;
-    
-    // Redirect back to GoHighLevel with success status
-    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=success&orderId=${ReturnValue}`);
-});
-
-router.get('/payment/failed/:locationId', (req, res) => {
-    const { locationId } = req.params;
-    const { ReturnValue } = req.query;
-    
-    // Redirect back to GoHighLevel with failure status
-    res.redirect(`${process.env.HIGHLEVEL_REDIRECT_URI}?status=failed&orderId=${ReturnValue}`);
 });
 
 // תצוגת דף התשלום
