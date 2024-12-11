@@ -10,8 +10,8 @@ router.get('/provider', (req, res) => {
         description: process.env.PROVIDER_DESCRIPTION,
         logoUrl: process.env.PROVIDER_LOGO_URL,
         uniqueName: process.env.PROVIDER_UNIQUE_NAME,
-        paymentUrl: `${process.env.BASE_URL}/process/:locationId`,
-        queryUrl: `${process.env.BASE_URL}/query/:locationId`
+        paymentUrl: `${process.env.BASE_URL}/payment/process/test-location`,
+        queryUrl: `${process.env.BASE_URL}/payment/query/test-location`
     });
 });
 
